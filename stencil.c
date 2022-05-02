@@ -14,9 +14,14 @@
 
 void
 communicate_borders(int top, int bot, int left, int right, 
-                  int width, int heigth, double* buff, 
+                  int width, int height, double* buff, 
                   MPI_Datatype MPI_ROW, MPI_Datatype MPI_COLUMN,
                   MPI_Comm MPI_COMM_MESH, int* coords);
+
+void
+communicate_borders_collective(double* buff, int width, int height,
+                              MPI_Datatype MPI_ROW, MPI_Datatype MPI_COLUMN,
+                              MPI_Comm MPI_COMM_MESH);
 
 void
 reindex_source(int* sources, int* my_sources, 
@@ -111,7 +116,11 @@ int main(int argc, char **argv) {
   double t=-MPI_Wtime();
   for(int iter=0; iter<niters; ++iter) {
     heat = 0.0;
+    #ifdef P2P_COMMS
     communicate_borders(top, bot, left, right, width, height, aold, MPI_ROW, MPI_COLUMN, MPI_COMM_MESH, coords);
+    #else
+    communicate_borders_collective(aold, width, height, MPI_ROW, MPI_COLUMN, MPI_COMM_MESH);
+    #endif
     for(int j=1; j<height+1; ++j) {
       for(int i=1; i<width+1; ++i) {
         anew[ind(i,j)] = aold[ind(i,j)]/2.0 + (aold[ind(i-1,j)] + aold[ind(i+1,j)] + aold[ind(i,j-1)] + aold[ind(i,j+1)])/4.0/2.0;
@@ -204,7 +213,7 @@ gather_final_result(double* main_buff, double* local_buff,
 
 void
 communicate_borders(int top, int bot, int left, int right, 
-                  int width, int heigth, double* buff, 
+                  int width, int height, double* buff, 
                   MPI_Datatype MPI_ROW, MPI_Datatype MPI_COLUMN,
                   MPI_Comm MPI_COMM_MESH, int* coords){
              
@@ -215,10 +224,48 @@ communicate_borders(int top, int bot, int left, int right,
   MPI_Sendrecv( buff+width+2+width , 1 , MPI_COLUMN , right , 20 , buff+width+2 , 1 , MPI_COLUMN , left , 20 , MPI_COMM_MESH , MPI_STATUS_IGNORE);
 
   // Send to the top
-  MPI_Sendrecv( buff+1+width+2, 1 , MPI_ROW , top , 30 , buff+1+((width+2) * (heigth+1)) , 1 , MPI_ROW , bot , 30 , MPI_COMM_MESH , MPI_STATUS_IGNORE);
+  MPI_Sendrecv( buff+1+width+2, 1 , MPI_ROW , top , 30 , buff+1+((width+2) * (height+1)) , 1 , MPI_ROW , bot , 30 , MPI_COMM_MESH , MPI_STATUS_IGNORE);
   
   //Send to the bottom
-  MPI_Sendrecv( buff+1+((width+2) * heigth) , 1 , MPI_ROW , bot , 40 , buff+1 , 1 , MPI_ROW , top , 40 , MPI_COMM_MESH , MPI_STATUS_IGNORE);
+  MPI_Sendrecv( buff+1+((width+2) * height) , 1 , MPI_ROW , bot , 40 , buff+1 , 1 , MPI_ROW , top , 40 , MPI_COMM_MESH , MPI_STATUS_IGNORE);
+}
+
+void
+communicate_borders_collective(double* buff, int width, int height,
+                              MPI_Datatype MPI_ROW, MPI_Datatype MPI_COLUMN,
+                              MPI_Comm MPI_COMM_MESH){
+  const int sendcounts[DIMENSIONS*2] = {1,1,1,1};
+  const int *recvcounts = sendcounts;
+
+  // Look up to the point to point version, so displs are the same
+  const MPI_Aint sdispls[DIMENSIONS*2] = 
+  {
+    (1+width+2)*sizeof(double), 
+    (width+2+width)*sizeof(double), 
+    (1+width+2)*sizeof(double), 
+    (1+((width+2)*height))*sizeof(double)
+  };
+
+  const MPI_Aint rdispls[DIMENSIONS*2] = 
+  {
+    (width+2+width+1)*sizeof(double), 
+    (width+2)*sizeof(double), 
+    (1+((width+2) * (height+1)))*sizeof(double), 
+    (1)*sizeof(double)
+  };
+
+  const MPI_Datatype sendtypes[DIMENSIONS*2] = 
+  {
+    MPI_COLUMN,
+    MPI_COLUMN,
+    MPI_ROW,
+    MPI_ROW
+  };
+
+  const MPI_Datatype *recvtypes = sendtypes;
+
+  // Order: left -> right -> top -> bot
+  MPI_Neighbor_alltoallw( buff , sendcounts , sdispls , sendtypes , buff , recvcounts , rdispls , recvtypes , MPI_COMM_MESH);
 }
 
 void
