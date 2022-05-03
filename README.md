@@ -69,8 +69,71 @@ Respecto al mapa de calor, al acabar las iteraciones, los bloques finales se rec
 
 ## Detalles de la comunicación 
 
+### Tipos de datos de las comunicaciones
+-----
+
+En este código stencil, un proceso necesita recibir su halo de los procesos vecinos. Es decir, recibirá de los vecinos de su misma fila las columnas laterales de su halo, y de los vecinos de su misma columna las filas superiores e inferiores de su halo.
+
+Por este motivo, para representar esta inforamción en las comunicaciones se han creado los tipos derivados `MPI_ROW` y `MPI_COLUMN`.
+
+```c++
+// Create Datatypes
+MPI_Type_contiguous( width, MPI_DOUBLE , &MPI_ROW);
+MPI_Type_commit( &MPI_ROW);
+MPI_Type_vector( height , 1 , width+2 , MPI_DOUBLE , &MPI_COLUMN);
+MPI_Type_commit( &MPI_COLUMN);
+```
+
 ### Comunicación punto a punto
 -----
 
+Para las comunicaciones punto a punto lo primero que necesitamos es identificar a nuestros vecinos inmediatos. Para ello, utilizamos `MPI_Cart_Shift()`.
+
+```c++
+// Get neighbours
+MPI_Cart_shift( MPI_COMM_MESH, 0, 1, &top , &bot);
+MPI_Cart_shift( MPI_COMM_MESH, 1, 1, &left , &right);
+```
+
+Con esta información, procedemos a mover los datos a nuestros cuatro vecinos. En nuestra implementación hemos decidido seguir el siguiente orden: 
+
+1. Izquierda
+2. Derecha
+3. Arriba
+4. Abajo
+
+Este movimiento de datos se ha implementado utilizando la función `MPI_Sendrecv`, de forma que, por ejemplo, en el caso en que movemos la información a la izquierda, un proceso simultaneamente envía a su vecino de la izquierda y recibe de su vecino de la derecha.
+
+```c++
+// Send to the left
+MPI_Sendrecv( buff+1+width+2 , 1 , MPI_COLUMN, left, 10, buff+width+2+width+1 , 1 , MPI_COLUMN , right , 10 , MPI_COMM_MESH , MPI_STATUS_IGNORE);
+  
+// Send to the right
+MPI_Sendrecv( buff+width+2+width , 1 , MPI_COLUMN , right , 20 , buff+width+2 , 1 , MPI_COLUMN , left , 20 , MPI_COMM_MESH , MPI_STATUS_IGNORE);
+
+// Send to the top
+MPI_Sendrecv( buff+1+width+2, 1 , MPI_ROW , top , 30 , buff+1+((width+2) * (height+1)) , 1 , MPI_ROW , bot , 30 , MPI_COMM_MESH , MPI_STATUS_IGNORE);
+  
+//Send to the bottom
+MPI_Sendrecv( buff+1+((width+2) * height) , 1 , MPI_ROW , bot , 40 , buff+1 , 1 , MPI_ROW , top , 40 , MPI_COMM_MESH , MPI_STATUS_IGNORE);
+```
+
+
 ### Comunicación con colectivas de vecindad
 -----
+
+Como queremos mandar datos diferentes a cada vecino se ha decidido implementar esta comunicación usando `MPI_Neighbor_alltoall()`. En concreto, como queremos enviar y recibir filas o columnas, dependiendo del vecino con el que nos comunicamos, se ha decidido usar la version `w` de esta colectiva.
+
+```c++
+// Order: top -> bot -> left -> right 
+MPI_Neighbor_alltoallw( buff , sendcounts , sdispls , sendtypes , buff , recvcounts , rdispls , recvtypes , MPI_COMM_MESH);
+```
+
+## Comprobación de resultados
+
+Para asegurar que el programa paralelo funciona correctamente se han ejecutado ambas versiones con distintas configuraciónes de procesos y se ha comparado que las salidas coincidan con las de la versión de referencia. En concreto se ha comprobado que:
+
+ - El calor total coincide con el de la versión de referencia.
+ - El fichero de salida `heat.svg` es exactamente igual que el generado por la versión de referencia. Para esto se ha utiliazado el comando `diff`.
+
+## Comparación de rendimiento
