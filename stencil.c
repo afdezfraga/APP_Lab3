@@ -241,30 +241,30 @@ communicate_borders_collective(double* buff, int width, int height,
   const MPI_Aint sdispls[DIMENSIONS*2] = 
   {
     (1+width+2)*sizeof(double), 
-    (width+2+width)*sizeof(double), 
+    (1+((width+2)*height))*sizeof(double),
     (1+width+2)*sizeof(double), 
-    (1+((width+2)*height))*sizeof(double)
+    (width+2+width)*sizeof(double)
   };
 
   const MPI_Aint rdispls[DIMENSIONS*2] = 
   {
-    (width+2+width+1)*sizeof(double), 
-    (width+2)*sizeof(double), 
+    (1)*sizeof(double),
     (1+((width+2) * (height+1)))*sizeof(double), 
-    (1)*sizeof(double)
+    (width+2)*sizeof(double),
+    (width+2+width+1)*sizeof(double)
   };
 
   const MPI_Datatype sendtypes[DIMENSIONS*2] = 
   {
-    MPI_COLUMN,
-    MPI_COLUMN,
     MPI_ROW,
-    MPI_ROW
+    MPI_ROW,
+    MPI_COLUMN,
+    MPI_COLUMN
   };
 
   const MPI_Datatype *recvtypes = sendtypes;
 
-  // Order: left -> right -> top -> bot
+  // Order: top -> bot -> left -> right 
   MPI_Neighbor_alltoallw( buff , sendcounts , sdispls , sendtypes , buff , recvcounts , rdispls , recvtypes , MPI_COMM_MESH);
 }
 
