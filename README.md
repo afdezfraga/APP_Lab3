@@ -136,4 +136,16 @@ Para asegurar que el programa paralelo funciona correctamente se han ejecutado a
  - El calor total coincide con el de la versión de referencia.
  - El fichero de salida `heat.svg` es exactamente igual que el generado por la versión de referencia. Para esto se ha utiliazado el comando `diff`.
 
-## Comparación de rendimiento
+### Evaluación del rendimiento
+-----
+
+```sh
+srun stencil 2048 1 1024
+```
+
+| .....        | 1 Process | 2 Processes | 4 Processes | 8 Processes | 16 Processes |
+| :-----------:|----------:| -----------:| -----------:| -----------:| ------------:|
+|Punto a punto | 54.846 s  | 28.145 s    | 14.885 s    | 8.367 s     | 4.512 s      |
+|  Colectivas  | 54.315 s  | 27.899 s    | 14.406 s    | 8.190 s     | 4.441 s      |
+
+El codigo escala de forma similar en ambas implementaciones, aunque el uso de las colectivas de vecindad si ayuda a obtener un rendimiento ligeramente superior para cualquier cantidad de procesos. 
